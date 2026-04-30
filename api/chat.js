@@ -1,56 +1,52 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Get Your Free API Key</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin-top: 50px;
+import { db } from "../lib/firebaseAdmin.js";
+
+export default async function handler(req, res) {
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Only POST allowed" });
+  }
+
+  const apiKey = req.headers["x-api-key"];
+
+  if (!apiKey) {
+    return res.status(401).json({ error: "API key required" });
+  }
+
+  // 🔍 check API key in Firebase
+  const snapshot = await db
+    .collection("users")
+    .where("apiKey", "==", apiKey)
+    .get();
+
+  if (snapshot.empty) {
+    return res.status(401).json({ error: "Invalid API key" });
+  }
+
+  const message = req.body?.message;
+
+  if (!message) {
+    return res.status(400).json({ error: "Message required" });
+  }
+
+  // 🤖 Groq API
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: message }]
+      })
     }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 14px 20px;
-      margin: 10px;
-      border: none;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    .output {
-      margin-top: 20px;
-      font-size: 18px;
-      color: #333;
-    }
-  </style>
-</head>
-<body>
+  );
 
-  <h1>Get Your Free API Key</h1>
-  <button id="getKeyButton">Get Free API Key</button>
+  const data = await response.json();
 
-  <div class="output" id="apiKeyOutput"></div>
-
-  <script>
-    // Event listener for the button click
-    document.getElementById('getKeyButton').addEventListener('click', async () => {
-      const response = await fetch('/api/generate-key', {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        document.getElementById('apiKeyOutput').textContent = 'Your API Key: ' + data.apiKey;
-      } else {
-        document.getElementById('apiKeyOutput').textContent = 'Error: ' + response.statusText;
-      }
-    });
-  </script>
-
-</body>
-</html>
+  return res.json({
+    reply: data.choices?.[0]?.message?.content || "No response"
+  });
+}
